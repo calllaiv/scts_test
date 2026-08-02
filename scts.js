@@ -1,29 +1,34 @@
-// Плагин "SCTS TV" для Lampa (через API)
+// Плагин SCTS TV для Lampa (исправленная версия)
 (function() {
+    // Ждём, пока Lampa полностью инициализируется
     if (typeof Lampa === 'undefined') {
-        setTimeout(arguments.callee, 100);
+        setTimeout(arguments.callee, 200);
         return;
     }
 
     var BASE = 'http://online.scts.tv';
     var API = BASE + '/api.php?format=ajax';
 
+    // Регистрируем источник
     Lampa.Source.add('scts', {
         name: 'SCTS TV',
         domain: 'online.scts.tv',
         protocol: 'http',
 
-        // ------ Поиск фильмов ------
+        // ----- Поиск -----
         search: function(query, callback) {
             var url = API + '&action=search&query=' + encodeURIComponent(query);
 
-            fetch(url, {
-                credentials: 'include',      // передаём куки сайта
+            // Используем Lampa.Utils.fetch — он работает везде
+            Lampa.Utils.fetch(url, {
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest'
-                }
+                },
+                credentials: 'include'
             })
-            .then(function(res) { return res.json(); })
+            .then(function(response) {
+                return response.json();
+            })
             .then(function(data) {
                 var items = [];
                 if (data && data.movies) {
@@ -44,18 +49,20 @@
             });
         },
 
-        // ------ Получение ссылки на видео ------
+        // ----- Получение видео -----
         getStream: function(item, callback) {
             var movieId = item.id;
             var url = API + '&action=getMovie&movie_id=' + encodeURIComponent(movieId);
 
-            fetch(url, {
-                credentials: 'include',
+            Lampa.Utils.fetch(url, {
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest'
-                }
+                },
+                credentials: 'include'
             })
-            .then(function(res) { return res.json(); })
+            .then(function(response) {
+                return response.json();
+            })
             .then(function(data) {
                 var movie = data.movie;
                 if (!movie || !movie.files) {
@@ -63,7 +70,6 @@
                     return;
                 }
 
-                // Приоритет качеств (сверху вниз)
                 var priorities = ['1080p', '720p', '480p', '360p'];
                 var streamUrl = null;
 
@@ -97,5 +103,5 @@
         }
     });
 
-    console.log('✅ Плагин SCTS TV загружен');
+    console.log('✅ SCTS TV плагин загружен');
 })();
