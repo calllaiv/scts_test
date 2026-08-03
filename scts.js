@@ -1,8 +1,5 @@
-// SCTS TV — универсальная регистрация для Media Station X
+// SCTS TV — регистрация через Lampa.Search
 (function() {
-    var attempts = 0;
-    var maxAttempts = 10;
-
     var show = function(msg) {
         if (typeof Lampa !== 'undefined' && Lampa.Notify) {
             try { Lampa.Notify.show(msg, '', 5000); } catch(e) {}
@@ -10,104 +7,70 @@
         console.log('[SCTS] ' + msg);
     };
 
+    var attempts = 0;
+    var maxAttempts = 10;
+
     var register = function() {
         if (typeof Lampa === 'undefined') {
-            show('❌ Lampa не определена');
+            setTimeout(register, 200);
             return;
         }
-
-        // Если есть Lampa.Source — используем его (на случай, если он появится позже)
-        if (typeof Lampa.Source !== 'undefined' && Lampa.Source) {
-            show('✅ Lampa.Source найден, регистрируем...');
-            doRegister(Lampa.Source);
+        if (typeof Lampa.Search === 'undefined' || typeof Lampa.Search.addSource !== 'function') {
+            attempts++;
+            if (attempts >= maxAttempts) {
+                show('❌ Lampa.Search.addSource не найден. Попытки: ' + attempts);
+                tryAlternative();
+                return;
+            }
+            show('⏳ Ожидание Lampa.Search.addSource... попытка ' + attempts);
+            setTimeout(register, 200);
             return;
         }
-
-        attempts++;
-        if (attempts >= maxAttempts) {
-            show('⏳ Lampa.Source не появился. Ищем альтернативы...');
-            // Пробуем другие способы
-            tryAlternative();
-            return;
-        }
-
-        show('⏳ Ожидание Lampa.Source... попытка ' + attempts);
-        setTimeout(register, 200);
+        // Если Lampa.Search.addSource доступен, регистрируем
+        doRegister();
     };
 
     var tryAlternative = function() {
-        show('🔍 Пробуем зарегистрировать через Lampa.Plugins...');
-
-        // 1. Пробуем Lampa.Plugins
-        if (typeof Lampa.Plugins !== 'undefined' && Lampa.Plugins) {
-            show('🔧 Lampa.Plugins найден. Доступные методы: ' + Object.keys(Lampa.Plugins).join(', '));
-            // Проверяем наличие метода add или register
-            if (typeof Lampa.Plugins.add === 'function') {
-                show('➕ Пробуем Lampa.Plugins.add');
-                doRegister(Lampa.Plugins);
-                return;
-            }
-            if (typeof Lampa.Plugins.register === 'function') {
-                show('➕ Пробуем Lampa.Plugins.register');
-                doRegister(Lampa.Plugins);
-                return;
-            }
-            // Если методов нет, пробуем добавить напрямую в объект
-            show('⚠️ Методы add/register не найдены. Добавляем в Lampa.Plugins.scts');
-            Lampa.Plugins.scts = createSourceObj();
-            show('✅ Добавлено в Lampa.Plugins.scts');
-            checkResult();
-            return;
+        show('⚠️ Пробуем альтернативные способы...');
+        var sourceObj = createSourceObj();
+        // Пробуем добавить в Lampa.Plugins (как плагин)
+        if (typeof Lampa.Plugins !== 'undefined' && typeof Lampa.Plugins.add === 'function') {
+            try {
+                Lampa.Plugins.add('scts', sourceObj);
+                show('✅ Добавлен в Lampa.Plugins');
+            } catch(e) { show('❌ Ошибка Lampa.Plugins.add: ' + e.message); }
         }
-
-        // 2. Пробуем Lampa.Search
-        if (typeof Lampa.Search !== 'undefined' && Lampa.Search) {
-            show('🔧 Lampa.Search найден. Доступные ключи: ' + Object.keys(Lampa.Search).join(', '));
-            // Возможно, есть свойство sources или providers
-            if (Lampa.Search.sources) {
-                show('➕ Добавляем в Lampa.Search.sources');
-                Lampa.Search.sources.scts = createSourceObj();
-                show('✅ Добавлено');
-                checkResult();
-                return;
-            }
-            // Или просто присваиваем новый метод
-            Lampa.Search.scts = function(query, callback) {
-                // Используем наш поиск
-                var source = createSourceObj();
-                source.search(query, callback);
-            };
-            show('✅ Добавлен метод Lampa.Search.scts');
-            checkResult();
-            return;
+        // Пробуем добавить напрямую в Lampa.Search.sources
+        if (Lampa.Search && Lampa.Search.sources) {
+            Lampa.Search.sources.scts = sourceObj;
+            show('✅ Добавлен в Lampa.Search.sources напрямую');
         }
-
-        // 3. Пробуем Lampa.Controller
-        if (typeof Lampa.Controller !== 'undefined' && Lampa.Controller) {
-            show('🔧 Lampa.Controller найден. Ключи: ' + Object.keys(Lampa.Controller).join(', '));
-            // Может быть метод addSource
-            if (typeof Lampa.Controller.addSource === 'function') {
-                show('➕ Пробуем Lampa.Controller.addSource');
-                doRegister(Lampa.Controller);
-                return;
-            }
+        // Пробуем Lampa.Controller.addSource, если есть
+        if (Lampa.Controller && typeof Lampa.Controller.addSource === 'function') {
+            try {
+                Lampa.Controller.addSource('scts', sourceObj);
+                show('✅ Добавлен в Lampa.Controller');
+            } catch(e) { show('❌ Ошибка Lampa.Controller.addSource: ' + e.message); }
         }
-
-        // 4. Ничего не помогло — выводим структуру Lampa
-        show('❌ Не удалось найти подходящий контейнер. Структура Lampa:');
-        for (var key in Lampa) {
-            if (typeof Lampa[key] === 'object' && Lampa[key] !== null) {
-                show('📦 ' + key + ': ' + Object.keys(Lampa[key]).join(', '));
-            } else {
-                show('📦 ' + key + ': ' + typeof Lampa[key]);
+        // Проверим результат через секунду
+        setTimeout(function() {
+            var found = false;
+            if (Lampa.Search.sources && Lampa.Search.sources.scts) {
+                found = true;
+                show('🎉 Источник появился в Lampa.Search.sources! Перезапустите Lampa.');
             }
-        }
+            if (!found) {
+                show('⚠️ Источник не найден. Доступные ключи Lampa.Search: ' + Object.keys(Lampa.Search).join(', '));
+                if (Lampa.Search.sources) {
+                    show('📋 Lampa.Search.sources: ' + Object.keys(Lampa.Search.sources).join(', '));
+                }
+            }
+        }, 1000);
     };
 
     var createSourceObj = function() {
         var BASE = 'http://online.scts.tv';
         var API = BASE + '/api.php?format=ajax';
-
         return {
             name: 'SCTS TV',
             domain: 'online.scts.tv',
@@ -183,62 +146,31 @@
         };
     };
 
-    var doRegister = function(container) {
-        var source = createSourceObj();
-        var key = 'scts';
-
-        if (typeof container.add === 'function') {
-            try {
-                container.add(key, source);
-                show('✅ Зарегистрировано через add()');
-                checkResult();
-                return;
-            } catch(e) { show('❌ Ошибка add(): ' + e.message); }
-        }
-        if (typeof container.register === 'function') {
-            try {
-                container.register(key, source);
-                show('✅ Зарегистрировано через register()');
-                checkResult();
-                return;
-            } catch(e) { show('❌ Ошибка register(): ' + e.message); }
-        }
-        // Если нет методов, добавляем в хранилище
-        if (container.sources) {
-            container.sources[key] = source;
-            show('✅ Добавлено в container.sources');
-            checkResult();
-            return;
-        }
-        // Иначе просто присваиваем свойство
-        container[key] = source;
-        show('✅ Добавлено как container.' + key);
-        checkResult();
-    };
-
-    var checkResult = function() {
-        // Проверяем, появился ли источник в Lampa.Search или Lampa.Plugins
-        var found = false;
-        if (Lampa.Search && Lampa.Search.sources && Lampa.Search.sources.scts) {
-            found = true;
-        }
-        if (Lampa.Plugins && Lampa.Plugins.scts) {
-            found = true;
-        }
-        if (found) {
-            show('🎉 Источник SCTS TV добавлен! Перезапустите Lampa.');
-        } else {
-            show('⚠️ Источник не найден после регистрации. Попробуйте перезапустить Lampa.');
-        }
-        // Выводим структуру Lampa.Search и Lampa.Plugins для отладки
-        if (Lampa.Search) {
-            show('📋 Lampa.Search: ' + Object.keys(Lampa.Search).join(', '));
-        }
-        if (Lampa.Plugins) {
-            show('📋 Lampa.Plugins: ' + Object.keys(Lampa.Plugins).join(', '));
+    var doRegister = function() {
+        var sourceObj = createSourceObj();
+        try {
+            Lampa.Search.addSource('scts', sourceObj);
+            show('✅ Источник добавлен через Lampa.Search.addSource');
+            // Попробуем обновить интерфейс
+            if (typeof Lampa.Search.open === 'function') {
+                Lampa.Search.open();
+            }
+            if (typeof Lampa.Search.render === 'function') {
+                Lampa.Search.render();
+            }
+            // Проверим, появился ли источник
+            setTimeout(function() {
+                if (Lampa.Search.sources && Lampa.Search.sources.scts) {
+                    show('🎉 Источник SCTS TV теперь доступен в поиске! Перезапустите Lampa, если не видно.');
+                } else {
+                    show('⚠️ Источник не появился в Lampa.Search.sources. Попробуйте перезапустить Lampa.');
+                }
+            }, 500);
+        } catch(e) {
+            show('❌ Ошибка Lampa.Search.addSource: ' + e.message);
+            tryAlternative();
         }
     };
 
-    // Запускаем
     register();
 })();
