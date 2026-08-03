@@ -1,40 +1,29 @@
-// Плагин SCTS TV для Lampa (финальная версия)
+// Тестовый плагин SCTS
 (function() {
-    if (typeof Lampa === 'undefined') {
-        setTimeout(arguments.callee, 200);
-        return;
+    // Уведомление о загрузке
+    if (typeof Lampa !== 'undefined') {
+        Lampa.Notify.show('🟢 SCTS плагин загружен!', '', 5000);
     }
 
-    var BASE = 'http://online.scts.tv';
-    var API = BASE + '/api.php?format=ajax';
-
-    Lampa.Source.add('scts', {
-        name: 'SCTS TV',
-        domain: 'online.scts.tv',
-        protocol: 'http',
-
-        search: function(query, callback) {
-            var url = API + '&action=search&query=' + encodeURIComponent(query);
-            Lampa.Utils.fetch(url, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                credentials: 'include'
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                var items = [];
-                if (data && data.movies) {
-                    data.movies.forEach(function(m) {
-                        items.push({
-                            title: m.name,
-                            url: BASE + '#/movie/id/' + m.movie_id,
-                            id: String(m.movie_id),
-                            type: 'movie'
-                        });
-                    });
-                }
-                callback(items);
-            })
-            .catch(function(e) {
+    // Попробуем зарегистрировать источник
+    try {
+        Lampa.Source.add('scts', {
+            name: 'SCTS TV (тест)',
+            domain: 'online.scts.tv',
+            protocol: 'http',
+            search: function(query, callback) {
+                Lampa.Notify.show('Поиск: ' + query, '', 3000);
+                callback([]);
+            },
+            getStream: function(item, callback) {
+                callback(null);
+            }
+        });
+        Lampa.Notify.show('✅ Источник зарегистрирован', '', 3000);
+    } catch(e) {
+        Lampa.Notify.show('❌ Ошибка: ' + e.message, '', 5000);
+    }
+})();            .catch(function(e) {
                 console.error('[SCTS] Ошибка поиска:', e);
                 callback([]);
             });
