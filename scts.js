@@ -1,11 +1,21 @@
-// SCTS TV плагин для Lampa — минимальная версия
+// SCTS TV плагин для Lampa — с ожиданием Lampa.Source
 (function() {
+    // Проверяем, что Lampa вообще существует
     if (typeof Lampa === 'undefined') {
         setTimeout(arguments.callee, 200);
         return;
     }
+
+    // Проверяем, что Lampa.Source существует
+    if (!Lampa.Source) {
+        setTimeout(arguments.callee, 200);
+        return;
+    }
+
+    // Теперь можно регистрировать источник
     var BASE = 'http://online.scts.tv';
     var API = BASE + '/api.php?format=ajax';
+
     Lampa.Source.add('scts', {
         name: 'SCTS TV',
         domain: 'online.scts.tv',
@@ -68,4 +78,6 @@
             .catch(function() { callback(null); });
         }
     });
+
+    console.log('✅ SCTS TV плагин зарегистрирован');
 })();
