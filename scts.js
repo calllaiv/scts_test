@@ -1,4 +1,4 @@
-// SCTS TV — финальная версия с ограничением попыток и диагностикой
+// SCTS TV — универсальная регистрация для Media Station X
 (function() {
     var attempts = 0;
     var maxAttempts = 10;
@@ -11,36 +11,23 @@
     };
 
     var register = function() {
-        // Если Lampa ещё не загружена
         if (typeof Lampa === 'undefined') {
             show('❌ Lampa не определена');
             return;
         }
 
-        // Если Lampa.Source есть — используем его
+        // Если есть Lampa.Source — используем его (на случай, если он появится позже)
         if (typeof Lampa.Source !== 'undefined' && Lampa.Source) {
             show('✅ Lampa.Source найден, регистрируем...');
             doRegister(Lampa.Source);
             return;
         }
 
-        // Если нет — пробуем другие пути
         attempts++;
         if (attempts >= maxAttempts) {
-            show('❌ Lampa.Source не появился за ' + maxAttempts + ' попыток. Пробуем альтернативы...');
-            // Пробуем найти другие возможные ключи
-            if (typeof Lampa.Plugins !== 'undefined' && Lampa.Plugins) {
-                show('🔍 Найден Lampa.Plugins, пробуем добавить через него...');
-                // Предположим, что там есть метод addSource
-                if (typeof Lampa.Plugins.addSource === 'function') {
-                    doRegister(Lampa.Plugins);
-                } else {
-                    show('⚠️ Lampa.Plugins.addSource не функция. Смотрим содержимое Lampa...');
-                    show('📋 Доступные ключи Lampa: ' + Object.keys(Lampa).join(', '));
-                }
-            } else {
-                show('⚠️ Lampa.Plugins не найден. Доступные ключи Lampa: ' + Object.keys(Lampa).join(', '));
-            }
+            show('⏳ Lampa.Source не появился. Ищем альтернативы...');
+            // Пробуем другие способы
+            tryAlternative();
             return;
         }
 
@@ -48,12 +35,80 @@
         setTimeout(register, 200);
     };
 
-    // Функция регистрации
-    var doRegister = function(container) {
+    var tryAlternative = function() {
+        show('🔍 Пробуем зарегистрировать через Lampa.Plugins...');
+
+        // 1. Пробуем Lampa.Plugins
+        if (typeof Lampa.Plugins !== 'undefined' && Lampa.Plugins) {
+            show('🔧 Lampa.Plugins найден. Доступные методы: ' + Object.keys(Lampa.Plugins).join(', '));
+            // Проверяем наличие метода add или register
+            if (typeof Lampa.Plugins.add === 'function') {
+                show('➕ Пробуем Lampa.Plugins.add');
+                doRegister(Lampa.Plugins);
+                return;
+            }
+            if (typeof Lampa.Plugins.register === 'function') {
+                show('➕ Пробуем Lampa.Plugins.register');
+                doRegister(Lampa.Plugins);
+                return;
+            }
+            // Если методов нет, пробуем добавить напрямую в объект
+            show('⚠️ Методы add/register не найдены. Добавляем в Lampa.Plugins.scts');
+            Lampa.Plugins.scts = createSourceObj();
+            show('✅ Добавлено в Lampa.Plugins.scts');
+            checkResult();
+            return;
+        }
+
+        // 2. Пробуем Lampa.Search
+        if (typeof Lampa.Search !== 'undefined' && Lampa.Search) {
+            show('🔧 Lampa.Search найден. Доступные ключи: ' + Object.keys(Lampa.Search).join(', '));
+            // Возможно, есть свойство sources или providers
+            if (Lampa.Search.sources) {
+                show('➕ Добавляем в Lampa.Search.sources');
+                Lampa.Search.sources.scts = createSourceObj();
+                show('✅ Добавлено');
+                checkResult();
+                return;
+            }
+            // Или просто присваиваем новый метод
+            Lampa.Search.scts = function(query, callback) {
+                // Используем наш поиск
+                var source = createSourceObj();
+                source.search(query, callback);
+            };
+            show('✅ Добавлен метод Lampa.Search.scts');
+            checkResult();
+            return;
+        }
+
+        // 3. Пробуем Lampa.Controller
+        if (typeof Lampa.Controller !== 'undefined' && Lampa.Controller) {
+            show('🔧 Lampa.Controller найден. Ключи: ' + Object.keys(Lampa.Controller).join(', '));
+            // Может быть метод addSource
+            if (typeof Lampa.Controller.addSource === 'function') {
+                show('➕ Пробуем Lampa.Controller.addSource');
+                doRegister(Lampa.Controller);
+                return;
+            }
+        }
+
+        // 4. Ничего не помогло — выводим структуру Lampa
+        show('❌ Не удалось найти подходящий контейнер. Структура Lampa:');
+        for (var key in Lampa) {
+            if (typeof Lampa[key] === 'object' && Lampa[key] !== null) {
+                show('📦 ' + key + ': ' + Object.keys(Lampa[key]).join(', '));
+            } else {
+                show('📦 ' + key + ': ' + typeof Lampa[key]);
+            }
+        }
+    };
+
+    var createSourceObj = function() {
         var BASE = 'http://online.scts.tv';
         var API = BASE + '/api.php?format=ajax';
 
-        var sourceObj = {
+        return {
             name: 'SCTS TV',
             domain: 'online.scts.tv',
             protocol: 'http',
@@ -126,37 +181,64 @@
                 });
             }
         };
+    };
 
-        // Пытаемся зарегистрировать
+    var doRegister = function(container) {
+        var source = createSourceObj();
         var key = 'scts';
+
         if (typeof container.add === 'function') {
             try {
-                container.add(key, sourceObj);
-                show('✅ Регистрация через add() выполнена');
-            } catch(e) {
-                show('❌ Ошибка add(): ' + e.message);
-                // Пробуем добавить напрямую в хранилище
-                if (container.sources) {
-                    container.sources[key] = sourceObj;
-                    show('✅ Добавлено в sources вручную');
-                }
-            }
-        } else if (container.sources) {
-            container.sources[key] = sourceObj;
-            show('✅ Добавлено в sources (метод add отсутствует)');
-        } else {
-            show('❌ Неизвестный контейнер, не удалось зарегистрировать');
+                container.add(key, source);
+                show('✅ Зарегистрировано через add()');
+                checkResult();
+                return;
+            } catch(e) { show('❌ Ошибка add(): ' + e.message); }
         }
+        if (typeof container.register === 'function') {
+            try {
+                container.register(key, source);
+                show('✅ Зарегистрировано через register()');
+                checkResult();
+                return;
+            } catch(e) { show('❌ Ошибка register(): ' + e.message); }
+        }
+        // Если нет методов, добавляем в хранилище
+        if (container.sources) {
+            container.sources[key] = source;
+            show('✅ Добавлено в container.sources');
+            checkResult();
+            return;
+        }
+        // Иначе просто присваиваем свойство
+        container[key] = source;
+        show('✅ Добавлено как container.' + key);
+        checkResult();
+    };
 
-        // Дополнительная проверка
-        var check = (container.sources && container.sources[key]) || (container[key]);
-        if (check) {
-            show('🎉 Источник SCTS TV зарегистрирован! Перезапустите Lampa.');
+    var checkResult = function() {
+        // Проверяем, появился ли источник в Lampa.Search или Lampa.Plugins
+        var found = false;
+        if (Lampa.Search && Lampa.Search.sources && Lampa.Search.sources.scts) {
+            found = true;
+        }
+        if (Lampa.Plugins && Lampa.Plugins.scts) {
+            found = true;
+        }
+        if (found) {
+            show('🎉 Источник SCTS TV добавлен! Перезапустите Lampa.');
         } else {
-            show('⚠️ Регистрация прошла, но источник не найден в контейнере.');
+            show('⚠️ Источник не найден после регистрации. Попробуйте перезапустить Lampa.');
+        }
+        // Выводим структуру Lampa.Search и Lampa.Plugins для отладки
+        if (Lampa.Search) {
+            show('📋 Lampa.Search: ' + Object.keys(Lampa.Search).join(', '));
+        }
+        if (Lampa.Plugins) {
+            show('📋 Lampa.Plugins: ' + Object.keys(Lampa.Plugins).join(', '));
         }
     };
 
-    // Запускаем процесс регистрации
+    // Запускаем
     register();
 })();
